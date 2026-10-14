@@ -296,3 +296,83 @@ Why: one large prompt (raw web text + inputs + many rules) → the model drops s
 How:
 - Step 1 (extract): the model reads raw web text and lists ONLY stated facts under 5 headings (Company Description, Size & Members, Products & Services, Recent Initiatives, Leaders)
 - Step 2 (write): the model
+
+---
+
+# Oct 14, 2026 – Session Notes (Part 5)
+
+## Time Log
+| Time | Task | Duration |
+|---|---|---|
+| 16:57 – 17:24 | Created test product sheet PDF; added PDF parsing (pypdf); ran with/without-PDF experiment | ~25 min |
+| 17:24 – 17:35 | Prompt v7: tightened rules; re-tested with PDF | ~10 min |
+| 17:35 – 17:39 | Reviewed results; planned structural fix; wrapped up | ~5 min |
+| **Total** | | **~40 min** |
+
+**Full day total (Oct 14): ~7.5 hours (10:19 – 17:39, with breaks)**
+
+## PDF Upload (Product Overview)
+Purpose: the assignment requires parsing an uploaded product sheet. It also gives the model real product features, so it stops inventing them.
+
+Test file: GreatShield_Product_Overview.pdf (1 page, written by me for the fictional product). Contents: continuous endpoint monitoring (Windows/macOS/Linux), ransomware rollback, audit-ready NCUA/FFIEC reports exportable as PDF, one-click device isolation, 24/7 managed alert triage, cloud-managed deployment, per-endpoint annual pricing.
+
+Code:
+- Installed pypdf (`uv add pypdf`); `from pypdf import PdfReader`
+- If a file was uploaded (`product_overview is not None`): read each page with `.extract_text()`, combine, cap at 4,000 characters
+- `or ""` handles pages with no extractable text (e.g., scanned images)
+- `st.success()` shows the number of pages read; try/except shows a warning if the PDF can't be read
+- Step 2 prompt receives: `Product overview (from uploaded PDF): {product_text or 'None provided'}`
+- Rule updated: describe the product ONLY via the value proposition + product overview
+
+## Experiment: With vs. Without PDF (same standard test case)
+| | With PDF | Without PDF |
+|---|---|---|
+| Confirmation message | ✅ "Read 1 page(s)" | Skipped correctly |
+| Product features | All traceable to product sheet | Mostly value proposition only |
+| Invented features | None | A few returned ("compliance dashboards," "Windows/macOS endpoints") |
+
+Finding: grounding the product side with a document removes feature hallucination, the same way website data did for the company side.
+
+New problems found in the PDF run:
+1. **Cross-contamination:** product sheet info (NCUA/FFIEC) appeared under the company's Current Priorities
+2. **Seller bias:** Likely Needs restated product features instead of the customer's needs
+3. **Regressions:** Kelly Gerber called "direct decision-maker" (no 'likely'); "no competitor footprint = opening" logic error returned
+
+## Prompt v7 – Tightened Rules
+Added 3 rules to Step 2:
+- Company Strategy and Likely Needs must come only from verified company facts, never from the product overview
+- Every statement about a leader's role or interest must include 'likely'
+- A competitor not mentioned on the website does not mean the company doesn't use it; never call it an opening
+
+Results:
+| Issue | Before v7 | v7 |
+|---|---|---|
+| Leader stated as decision-maker | Yes | ✅ Fixed – all leaders labeled 'likely' |
+| "No competitor = opening" | Yes | ✅ Fixed |
+| NCUA/FFIEC under company strategy | Yes | ✅ Fixed |
+| Likely Needs = product features | Yes | ❌ Not fixed – and mislabeled "derived from verified facts" |
+
+Other minor issues: "implied by product target" note in Company Strategy (product info leaking, though labeled); "ready-out-of-the-box" phrase not in product sheet; date range written out of order (Sep–Aug).
+
+## Key Lesson
+Prompt rules have limits. When the model can see the product sheet while writing the customer's needs, it keeps borrowing from it, even when explicitly told not to. Some problems need a **structural fix** (changing what the model can see), not more rules.
+
+## Planned Fix (next session)
+Add a separate "needs analysis" step to the chain that sees ONLY the company facts, never the product sheet:
+- Step 1: Extract company facts (website)
+- Step 2 (new): Identify likely needs from company facts only
+- Step 3: Write brief using facts + needs + product info
+
+## Accuracy Check (still TO DO)
+- [ ] Executives: __/8 names and titles correct vs. leadership page
+
+## Concepts Learned
+- pypdf: PdfReader, .pages, .extract_text()
+- `is not None` to check whether a file was uploaded
+- `x or "default"` to provide a fallback value
+- st.success() (green message)
+- Structural fixes vs. prompt rules: controlling what the model sees is more reliable than telling it what to ignore
+
+## Next Session
+1. Needs-analysis step (third link in the prompt chain), ~20 min
+2. #6: One-pager layout + download button, ~1 hr
