@@ -101,3 +101,5 @@ Used Claude as an instructor for explanations, debugging guidance and code patte
 - Limitation: only searches the homepage; news/press pages might mention vendors.
 
 Concepts: for loop, .splitlines(), .replace(), .split(), .lower(), if/else, `in`
+
+Test data can leak into real output, so remove it after testing.

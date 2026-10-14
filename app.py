@@ -27,16 +27,22 @@ if st.button("Generate"):
     full_text = get_page_text(company_url)
     website_text = full_text[:4000]
 
+    competitor_results = []                                   # NEW: empty list
     for url in competitors_urls.splitlines():
         name = url.replace("https://", "").replace("www.", "").split(".")[0]
         if name.lower() in full_text.lower():
-            st.write(f"✅ {name} IS mentioned on the prospect's website")
+            result = f"{name}: mentioned on the prospect's website"      # NEW
         else:
-            st.write(f"❌ {name} is not mentioned on the prospect's website")
+            result = f"{name}: not mentioned on the prospect's website"  # NEW
+        competitor_results.append(result)                     # NEW: add to list
+        st.write(result)
 
-    prompt = f"You are a sales research analyst helping a sales rep prepare for a first meeting. Write a short account brief about the target company. The rep sells {product_name}, a {product_category} product. Its value: {value_proposition}. The target company's website is {company_url}, and the rep will be meeting with {target_customer}. Keep it under 200 words, use bullet points under three headings: Company Overview, Likely Needs, and Talking Points. Write it for a rep with 10 minutes to prepare. Use only the information provided here, including the website text. If you don't know a fact about the company, write 'Unknown – verify' instead of guessing. Do not invent statistics, case studies, or product features. Here is text from the company's website: {website_text}"
+    prompt = f"You are a sales research analyst helping a sales rep prepare for a first meeting. Write a short account brief about the target company. The rep sells {product_name}, a {product_category} product. Its value: {value_proposition}. The target company's website is {company_url}, and the rep will be meeting with {target_customer}. Keep it under 250 words, use bullet points under four headings: Company Overview, Likely Needs, Competitor Mentions, and Talking Points. Write it for a rep with 10 minutes to prepare. Use only the information provided here, including the website text. If you don't know a fact about the company, write 'Unknown – verify' instead of guessing. Do not invent statistics, case studies, or product features. Do not say where facts came from; sources are listed separately. Competitor check results: {competitor_results}. Do not claim the company uses a competitor unless the results say it is mentioned. Here is text from the company's website: {website_text}"
     response = client.chat.completions.create(
         model="openai/gpt-oss-120b",
         messages=[{"role": "user", "content": prompt}],
     )
     st.write(response.choices[0].message.content)
+
+    st.markdown("**Sources**")                                # NEW
+    st.markdown(f"- Company website: {company_url}")          # NEW
