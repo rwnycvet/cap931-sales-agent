@@ -243,3 +243,56 @@ for tag in soup(["nav", "header", "footer", "script", "style"]):
 - HTML structure: pages are built from tagged sections (nav, header, footer, main)
 - BeautifulSoup: soup([...]) finds sections; .decompose() deletes them
 - Why functions matter: one fix in get_page_text() improved every page
+
+---
+
+# Oct 14, 2026 – Session Notes (Part 4)
+
+## Time Log
+| Time | Task | Duration |
+|---|---|---|
+| 15:56 – 16:09 | Added input validation; tested 3 cases; created standard test case | ~15 min |
+| 16:09 – 16:24 | Reviewed output with full value proposition; built prompt chaining (v6) | ~15 min |
+| 16:24 – 16:57 | Reviewed Step 1 extracted facts; corrected press-release limitation | ~30 min |
+| **Total** | | **~1 hr** |
+
+## Input Validation
+Added at the start of the Generate block:
+- Company URL must start with "http" → otherwise st.error() + st.stop()
+- Product Name, Value Proposition and Target Customer must not be empty → otherwise error + stop
+- `not variable` = True when a box is empty; `or` = any one missing triggers the error
+
+Tests (3 cases):
+| Test | Input | Result |
+|---|---|---|
+| 1 | Required fields empty | ✅ Red error, no brief generated |
+| 2 | URL without https:// | ✅ Red error, no brief generated |
+| 3 | All fields valid | ✅ Brief generated normally |
+
+## Standard Test Case (use the same inputs every run so experiments are comparable)
+| Field | Value |
+|---|---|
+| Product Name | GreatShield EDR |
+| Company URL | https://www.nymcu.org |
+| Extra pages | https://www.nymcu.org/about-mcu/ · https://www.nymcu.org/about-mcu/leadership-team · https://www.nymcu.org/about-mcu/mcu-in-the-community |
+| Product Category | Endpoint Detection and Response (EDR) |
+| Competitors | https://www.crowdstrike.com · https://www.sentinelone.com |
+| Value Proposition | Enterprise-grade endpoint protection with audit-ready compliance reporting, built for mid-sized financial institutions without large security teams. |
+| Target Customer | Kelly Gerber, Chief Risk Officer |
+
+## Prompt v5 with full value proposition (single prompt)
+Improvements:
+- Talking points tied the product to specific leaders (CRO = audit reporting, CTO = lean team, CFO = budget)
+- Found a 5th leader (COO) and named NCUA (the correct federal regulator for credit unions)
+
+Problems, showing that single-prompt rules get lost:
+- Invented product features: "single pane of glass," "low-maintenance agent," "automated remediation"
+- Invented pricing and preferences: "subscription model aligns with CFO's budgeting preferences"
+- Stated assumptions as fact: "Jim Mill – decision-maker for security architecture"
+
+## Prompt v6 – Prompt Chaining
+Why: one large prompt (raw web text + inputs + many rules) → the model drops some rules.
+
+How:
+- Step 1 (extract): the model reads raw web text and lists ONLY stated facts under 5 headings (Company Description, Size & Members, Products & Services, Recent Initiatives, Leaders)
+- Step 2 (write): the model

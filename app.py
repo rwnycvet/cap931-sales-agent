@@ -4,6 +4,7 @@ from groq import Groq
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
+from pypdf import PdfReader
 
 load_dotenv()
 client = Groq(api_key=os.environ["GROQ_API_KEY"])
@@ -15,6 +16,12 @@ def get_page_text(url):
     for tag in soup(["nav", "header", "footer", "script", "style"]):   # NEW
         tag.decompose()                                                 # NEW
     return soup.get_text(separator=" ", strip=True)
+def ask_model(prompt):
+    response = client.chat.completions.create(
+        model="openai/gpt-oss-120b",
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.choices[0].message.content
 
 st.title("Sales Account Research Assistant")
 
@@ -57,7 +64,33 @@ if st.button("Generate"):
         competitor_results.append(result)
         st.write(result)
 
-    prompt = f"""You are a sales research analyst helping a sales rep prepare for a first meeting.
+    product_text = ""
+    if product_overview is not None:
+        try:
+            reader = PdfReader(product_overview)
+            for pdf_page in reader.pages:
+                product_text += (pdf_page.extract_text() or "") + "\n"
+            product_text = product_text[:4000]
+            st.success(f"Read {len(reader.pages)} page(s) from the product PDF.")
+        except Exception:
+            st.warning("Could not read the PDF – continuing without it.")    
+
+        # STEP 1 – EXTRACT facts from the website
+    extract_prompt = f"""Read the company web page text below and list ONLY facts that are directly stated in it.
+Group them under these headings: Company Description, Size & Members, Products & Services, Recent Initiatives, Leaders (name and exact title).
+Use short bullet points. Do not interpret, guess, or add anything that is not in the text.
+If a heading has nothing, write 'None found'.
+
+Homepage text: {website_text}
+
+Other company pages: {extra_text}"""
+
+    facts = ask_model(extract_prompt)
+    with st.expander("Step 1 – Facts extracted from the website"):
+        st.write(facts)
+
+    # STEP 2 – WRITE the brief using only the extracted facts
+    brief_prompt = f"""You are a sales research analyst helping a sales rep prepare for a first meeting.
 Write a one-page account brief about the target company.
 
 The rep sells {product_name}, a {product_category} product. Its value: {value_proposition}.
@@ -65,29 +98,31 @@ The target company's website is {company_url}. The rep will meet with {target_cu
 
 Use these headings, with short bullet points under each:
 1. Company Strategy: what the company does and its current priorities
-2. Leadership: key leaders named in the text and why each matters to this sale
+2. Leadership: key leaders and why each might matter to this sale
 3. Competitor Mentions: use only the competitor check results below
 4. Likely Needs
 5. Talking Points
 
 Rules:
 - Keep it under 350 words. Write for a rep with 10 minutes to prepare.
-- Use only the information provided here. If a fact is missing, write 'Unknown – verify'.
-- Do not invent names, titles, statistics, case studies, or product features.
+- Use only the verified facts below. If something is missing, write 'Unknown – verify'.
+- Describe {product_name} using ONLY the value proposition and the product overview below. Do not add features, pricing, or deployment claims that are not in them.
+- Do not state what a leader decides, owns, or prefers unless the facts say so. You may suggest why they might care, labeled as 'likely'.
+- Do not invent names, titles, statistics, or case studies.
 - Do not claim the company uses a competitor unless the results say it is mentioned.
 - Do not say where facts came from; sources are listed separately.
+- Company Strategy and Likely Needs must come only from the verified company facts, never from the product overview.
+- Every statement about a leader's role or interest must include the word 'likely'.
+- A competitor not being mentioned on the website does not mean the company doesn't use it. Never describe this as an opening or opportunity.
 
+   Product overview (from uploaded PDF): {product_text or 'None provided'}
 Competitor check results: {competitor_results}
 
-Homepage text: {website_text}
+Verified facts about the company:
+{facts}"""
 
-Other company pages: {extra_text}"""
-
-    response = client.chat.completions.create(
-        model="openai/gpt-oss-120b",
-        messages=[{"role": "user", "content": prompt}],
-    )
-    st.write(response.choices[0].message.content)
+    brief = ask_model(brief_prompt)
+    st.write(brief)
 
     st.markdown("**Sources**")
     for source in sources:                        # NEW: list every page used
