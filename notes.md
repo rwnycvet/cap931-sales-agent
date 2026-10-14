@@ -94,3 +94,10 @@ Result:
 
 ## AI Assistance
 Used Claude as an instructor for explanations, debugging guidance and code patterns. Prompt v1 and the anti-hallucination sentence were drafted with AI assistance; I implemented, ran and evaluated all versions.
+## Competitor Mentions (Oct 14)
+- Python checks the prospect's full website text for each competitor name (loop + string search, no AI → no hallucination).
+- Result: crowdstrike ❌, sentinelone ❌ (expected; homepage doesn't list vendors).
+- Positive control: "fraud.com" → ✅, confirms check can detect a match.
+- Limitation: only searches the homepage; news/press pages might mention vendors.
+
+Concepts: for loop, .splitlines(), .replace(), .split(), .lower(), if/else, `in`

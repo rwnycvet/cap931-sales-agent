@@ -24,14 +24,19 @@ value_proposition = st.text_area("Value Proposition")
 target_customer = st.text_input("Target Customer")
 product_overview = st.file_uploader("Product overview PDF (optional)", type=["pdf"])
 if st.button("Generate"):
+    full_text = get_page_text(company_url)
+    website_text = full_text[:4000]
 
+    for url in competitors_urls.splitlines():
+        name = url.replace("https://", "").replace("www.", "").split(".")[0]
+        if name.lower() in full_text.lower():
+            st.write(f"✅ {name} IS mentioned on the prospect's website")
+        else:
+            st.write(f"❌ {name} is not mentioned on the prospect's website")
 
-
-    website_text = get_page_text(company_url)[:4000]
-
-    prompt = f"You are a sales research analyst helping a sales rep prepare for a first meeting. Write a short account brief about the target company. The rep sells {product_name}, a {product_category} product. Its value: {value_proposition}. The target company's website is {company_url}, and the rep will be meeting with {target_customer}. Keep it under 200 words, use bullet points under three headings: Company Overview, Likely Needs, and Talking Points. Write it for a rep with 10 minutes to prepare. Use only the information provided here, including the website text. If you don't know a fact about the company, write 'Unknown – verify' instead of guessing. Do not invent statistics, case studies, or product features, Here is text from the company's website: {website_text}."
+    prompt = f"You are a sales research analyst helping a sales rep prepare for a first meeting. Write a short account brief about the target company. The rep sells {product_name}, a {product_category} product. Its value: {value_proposition}. The target company's website is {company_url}, and the rep will be meeting with {target_customer}. Keep it under 200 words, use bullet points under three headings: Company Overview, Likely Needs, and Talking Points. Write it for a rep with 10 minutes to prepare. Use only the information provided here, including the website text. If you don't know a fact about the company, write 'Unknown – verify' instead of guessing. Do not invent statistics, case studies, or product features. Here is text from the company's website: {website_text}"
     response = client.chat.completions.create(
         model="openai/gpt-oss-120b",
         messages=[{"role": "user", "content": prompt}],
-)
-    st.write (response.choices[0].message.content)
+    )
+    st.write(response.choices[0].message.content)
