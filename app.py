@@ -27,6 +27,12 @@ value_proposition = st.text_area("Value Proposition")
 target_customer = st.text_input("Target Customer")
 product_overview = st.file_uploader("Product overview PDF (optional)", type=["pdf"])
 if st.button("Generate"):
+    if not company_url.startswith("http"):
+        st.error("Company URL must start with https://")
+        st.stop()
+    if not product_name or not value_proposition or not target_customer:
+        st.error("Please fill in Product Name, Value Proposition, and Target Customer.")
+        st.stop()
     full_text = get_page_text(company_url)
     website_text = full_text[:4000]
 

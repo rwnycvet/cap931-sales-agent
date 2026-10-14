@@ -178,3 +178,68 @@ Issues found:
 - try / except: error handling so one failed page doesn't crash the app
 - Triple-quoted f-strings for multi-line prompts
 - Positive control: testing that a check can return "yes," not just "no"
+
+---
+
+# Oct 14, 2026 – Session Notes (Part 3)
+
+## Time Log
+| Time | Task | Duration |
+|---|---|---|
+| 15:17 – 15:42 | Reviewed Prompt v5 output; diagnosed missing leadership names with a DEBUG test | ~25 min |
+| 15:42 – 15:49 | Fixed get_page_text() to strip site menus; re-tested | ~7 min |
+| 15:49 – 15:56 | Reviewed improved output; identified CTO as a second buyer; planned input validation | ~7 min |
+| **Total** | | **~40 min** |
+
+## Challenge: Leadership Names Missing
+**Problem:** The brief said no leadership names were found, even though the leadership page lists them.
+
+**Hypothesis:** Each extra page was cut to its first 3,000 characters, and every MCU page starts with the same long site menu. The names were further down and got cut off.
+
+**Test (before changing any code):** Added a temporary DEBUG line:
+`st.write("DEBUG – Gerber in all text:", "gerber" in full_text.lower(), "| in prompt text:", "gerber" in extra_text.lower())`
+- Result: **True | False** → the name was downloaded but did not reach the prompt. Hypothesis confirmed.
+
+**Fix:** In get_page_text(), removed the page's menu and code sections before extracting text:
+```python
+for tag in soup(["nav", "header", "footer", "script", "style"]):
+    tag.decompose()
+```
+- Because every page goes through this one function, the fix cleaned all pages at once (homepage, About, Leadership, Community).
+
+**Re-test:** DEBUG → **True | True**. DEBUG line then removed.
+
+**Lesson:** Test the cause before changing the code. A one-line True/False check separated "not downloaded" from "downloaded but cut off," which need completely different fixes.
+
+## Results After the Fix
+- Leadership section now lists 4 executives with titles (CRO, CTO, CEO, CFO), up from only the name I typed in
+- Company facts became specific: member-owned, not-for-profit, 630,000+ members
+- New strategy signal found: recent selection of VaultRight for branch workflow (closest thing to a press release)
+- Talking points referenced real initiatives (efficiency push, member trust)
+
+## Research Finding: Two Buyers
+- Earlier I said there is no CISO or CIO. Correct, but the leadership team has a **Chief Technology Officer (Jim Mill)**.
+- Likely buying roles:
+  - **CTO (Jim Mill)**: technical evaluator; owns the technology the security tool runs on
+  - **Chief Risk Officer (Kelly Gerber)**: business sponsor; owns the risk the tool reduces
+- Discovery question: "Who owns cybersecurity decisions at MCU: technology, risk, or both?"
+
+## Remaining Model Issues
+- Assumed Kelly Gerber is the "primary decision-maker for security posture" (not stated on the site)
+- Still adds regulations from training (GLBA, NYDFS) rather than from source pages
+- "Value proposition: Unknown – verify": Value Proposition box was left empty, and the app ran anyway → needs input validation
+
+## Accuracy Check (TO DO)
+- [ ] Verify leadership names and titles against https://www.nymcu.org/about-mcu/leadership-team
+- Result: __/4 correct
+
+## Next: Input Validation (planned)
+- Stop the app with an error if Company URL doesn't start with http, or if Product Name, Value Proposition or Target Customer is empty
+- Uses st.error() and st.stop()
+- Test 3 cases: missing field, URL without https://, all fields correct
+
+## Concepts Learned
+- Debugging with a temporary True/False check (`"word" in text`)
+- HTML structure: pages are built from tagged sections (nav, header, footer, main)
+- BeautifulSoup: soup([...]) finds sections; .decompose() deletes them
+- Why functions matter: one fix in get_page_text() improved every page
