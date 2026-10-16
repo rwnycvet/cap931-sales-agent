@@ -5,6 +5,7 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
+from datetime import date
 
 load_dotenv()
 client = Groq(api_key=os.environ["GROQ_API_KEY"])
@@ -126,6 +127,7 @@ Rules:
 - Company Strategy and Likely Needs must come only from the verified company facts, never from the product overview.
 - Every statement about a leader's role or interest must include the word 'likely'.
 - A competitor not being mentioned on the website does not mean the company doesn't use it. Never describe this as an opening or opportunity.
+- Start directly with heading 1. Do not write a title, a meeting line, or a closing note.
 
 Needs analysis (from company facts only): {needs}
 Product overview (from uploaded PDF): {product_text or 'None provided'}
@@ -137,6 +139,38 @@ Verified facts about the company:
     brief = ask_model(brief_prompt)
     st.write(brief)
 
+    # Build the sources list as text (used on screen AND in the download)
+    sources_text = ""
+    for source in sources:
+        sources_text += f"- {source}\n"
+
     st.markdown("**Sources**")
-    for source in sources:                        # NEW: list every page used
-        st.markdown(f"- {source}")
+    st.markdown(sources_text)
+
+    # Build the one-pager document
+    today = date.today().strftime("%B %d, %Y")
+    one_pager = f"""# Account Brief
+
+- **Product:** {product_name}
+- **Meeting with:** {target_customer}
+- **Company:** {company_url}
+- **Date:** {today}
+- **Prepared by:** Sales Account Research Assistant
+
+---
+
+{brief}
+
+---
+
+## Sources
+{sources_text}
+"""
+
+    st.download_button(
+        label="Download one-pager",
+        data=one_pager,
+        file_name="account_brief.md",
+        mime="text/markdown",
+        on_click="ignore",
+    )
