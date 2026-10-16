@@ -18,11 +18,15 @@ def get_page_text(url):
         tag.decompose()                                                 # NEW
     return soup.get_text(separator=" ", strip=True)
 def ask_model(prompt):
-    response = client.chat.completions.create(
-        model="openai/gpt-oss-120b",
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return response.choices[0].message.content
+       try:
+           response = client.chat.completions.create(
+               model="openai/gpt-oss-120b",
+               messages=[{"role": "user", "content": prompt}],
+           )
+           return response.choices[0].message.content
+       except Exception as error:
+           st.error(f"Could not reach the AI model. Check your internet or VPN and try again. Details: {error}")
+           st.stop()
 
 st.title("Sales Account Research Assistant")
 
