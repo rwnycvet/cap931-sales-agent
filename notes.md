@@ -414,3 +414,104 @@ Add a separate "needs analysis" step to the chain that sees ONLY the company fac
 **Problem (from v7):** "Likely Needs" restated product features (Windows/macOS/Linux, ransomware rollback, cloud-managed agents) even with an explicit rule against it, because the model could see the product sheet while writing that section.
 
 **Fix (structural, not another rule):** new middle step that never sees the product sheet.
+
+---
+
+# Oct 16, 2026 – Session Notes
+
+## Time Log
+| Time | Task | Duration |
+|---|---|---|
+| 09:12 – 09:45 | Built downloadable one-pager (#6): title block, sources text, download button | ~35 min |
+| 09:45 – 11:07 | Hit Groq 403 again (VPN on); added error handling to ask_model(); re-tested | ~80 min (with breaks) |
+| 11:07 – 11:23 | Fixed one-pager formatting (header lines, duplicate title); reviewed content | ~15 min |
+| 11:23 – 11:28 | Closed out #6; planned #7 deployment (GitHub + Streamlit Cloud) | ~5 min |
+| **Total** | | **~2 hrs 15 min** |
+
+## #6: Downloadable One-Pager
+**Interpretation of "Per Scholas template":** the template's sections (Overview, Steps, Conclusion, Appendix) fit a lab report, not a sales brief.
+- One-pager: keeps its sales sections, with a template-style title block (title, name, date)
+- Write-up (#9): uses the full Per Scholas template
+- [ ] Optional: confirm interpretation with instructor
+
+**Code added:**
+- `from datetime import date`, then `date.today().strftime("%B %d, %Y")` → "October 16, 2026" (%B = month name, %d = day, %Y = year)
+- `sources_text` built once with a loop and used twice (on screen + in the download)
+- `one_pager` f-string: title block + brief + sources, using Markdown (`#` heading, `**bold**`, `---` divider)
+- `st.download_button(label, data, file_name="account_brief.md", mime="text/markdown", on_click="ignore")`
+- `on_click="ignore"` stops Streamlit from re-running the page on click, so the brief stays visible ✅ (tested)
+
+**Formatting fixes after first download:**
+| Problem | Cause | Fix |
+|---|---|---|
+| Header lines ran together into one paragraph | Markdown ignores single line breaks | Changed header to a bullet list |
+| Two titles (mine + the model's) | Model added its own title and meeting line | Rule added: "Start directly with heading 1. Do not write a title, a meeting line, or a closing note." |
+
+Result: one title, each header item on its own line, five sections, sources at the end ✅
+
+## Challenge: Groq 403 Returned
+- Error: `PermissionDeniedError 403 – Access denied. Please check your network settings.`
+- App loaded pages, checked competitors and read the PDF, then failed at the first model call (Step 1)
+- Cause: VPN (PIA) was on, same as Oct 11
+- Fix: VPN off
+
+**Improvement: friendly error handling.** Wrapped the model call in ask_model() with try/except:
+```python
+except Exception as error:
+    st.error(f"Could not reach the AI model. Check your internet or VPN and try again. Details: {error}")
+    st.stop()
+```
+- `except Exception as error:` catches the problem and stores the message in `error`
+- Tested both cases: VPN on → one clean red message ✅; VPN off → brief generates ✅
+- Production note: a deployed app needs the same handling for API outages or blocks
+
+## Content Observations (run-to-run variation)
+Run 1 (09:45) Likely Needs added assumptions not in the facts:
+- "POS/ATM devices" (no ATMs in facts)
+- "Employee devices used for development of the mobile app" (facts don't say MCU builds its own app)
+- "Insider-threat monitoring of executive laptops" (stretch from "they have executives")
+
+Run 2 (11:23) needs were more reasonable but still had weak links:
+- "Proactive threat-hunting – high public profile and community partnerships increase exposure" (weak inference)
+- GLBA/NYDFS still come from model training, not source pages
+
+Conclusion: same prompt, different runs → different assumptions. Documented as a limitation; no further prompt tuning (diminishing returns).
+
+## Decision: Word (.docx) Export
+- Would look more professional for a sales rep (~45 min: bullets and headings must be converted)
+- Deferred as an optional enhancement; Markdown already meets "one-page document"
+- Priority goes to deployment (#7) and write-up (#9)
+
+## #7: Deployment (started – plan)
+**Part 1: GitHub (in progress)**
+1. Security check: `git ls-files` → `.env` must NOT appear
+2. `uv export --no-hashes --no-emit-project -o requirements.txt` (list of libraries for Streamlit Cloud)
+3. Commit requirements.txt
+4. Create empty public repo `cap931-sales-agent` on GitHub (no README)
+5. `git remote add origin …`, `git branch -M main`, `git push -u origin main`
+6. Verify on GitHub: app.py, requirements.txt, notes.md present; no .env
+
+**Part 2: Streamlit Cloud (next)**
+- Sign in at share.streamlit.io with GitHub; point to repo, branch main, file app.py
+- Add GROQ_API_KEY as a secret (Streamlit's version of .env)
+
+## Status vs. Estimate
+| # | Item | Status |
+|---|---|---|
+| 1 | Competitor results + Sources | ✅ |
+| 2 | Leadership & strategy data | ✅ |
+| 3 | Prompt chaining (3 steps) | ✅ |
+| 4 | Input checks + error handling | ✅ (+ model error handling today) |
+| 5 | PDF upload | ✅ |
+| 6 | One-pager download | ✅ |
+| 7 | Deploy to Streamlit Cloud | 🔄 In progress |
+| 8 | Alert system design | ⬜ |
+| 9 | Write-up in Per Scholas template | ⬜ |
+
+## Still TO DO
+- [ ] Verify executive names/titles: __/8 vs. leadership page
+- [ ] Commit: `git commit -am "Downloadable one-pager with title block; friendly model error"`
+- [ ] Send `git ls-files` output before pushing to GitHub
+
+5. Live test (Oct 16, 12:11): standard test case + PDF on live URL → brief generated ✅, download ✅
+   Groq API reachable from Streamlit Cloud (no 403) ✅
