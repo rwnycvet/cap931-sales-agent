@@ -515,3 +515,75 @@ Conclusion: same prompt, different runs → different assumptions. Documented as
 
 5. Live test (Oct 16, 12:11): standard test case + PDF on live URL → brief generated ✅, download ✅
    Groq API reachable from Streamlit Cloud (no 403) ✅
+
+## #8 Alert System Design (Optional Enhancement – designed, not built)
+
+### Purpose
+Sales reps can't check every prospect's website daily. The alert system watches each prospect for
+new content (news, press releases, job postings) that contains the rep's keywords, and sends one
+daily email digest with links, so the rep can reach out at the right moment
+(e.g., "MCU just posted a job for a security engineer").
+
+### Flow
+Daily schedule → Fetch watched pages → Find new links → Keyword match (Python) → AI one-line summary → Email digest
+
+### 1. Inputs (what the rep sets up)
+- Watchlist: prospect company URLs, including news and careers pages (e.g., nymcu.org news feed)
+- Keywords: e.g., "cybersecurity," "ransomware," "security engineer," "CISO," "breach," "compliance"
+- Rep's email address and frequency (daily or weekly)
+- Stored in a small config file (JSON) or a simple database table
+
+### 2. Sources (where it looks)
+- Company news / press release pages: MCU already has a dated news feed (found in Step 1 extraction)
+- Company careers page: job postings reveal technology plans (a new security hire signals a security initiative)
+- News search RSS feed for the company name: catches press coverage the company didn't post itself
+- Reuses the existing get_page_text() function: same download + menu-stripping code as the app
+
+### 3. Schedule (when it runs)
+- A scheduled job runs once a day (e.g., 7:00 AM), using GitHub Actions (scheduled workflow in the same repo) or a cloud scheduler
+- Why not the Streamlit app itself? Streamlit only runs while someone has the page open. Alerts must run
+  with nobody watching, so they need a separate scheduled process.
+
+### 4. Change detection (how it knows what's new)
+- Each run collects every article/job link on the watched pages
+- Compares them to the links saved from the previous run (stored in a JSON file or SQLite database)
+- Only links never seen before move to the next step; then the saved list is updated
+- Prevents the same alert from being sent every day
+
+### 5. Relevance matching (what's worth sending)
+- Step A – Python keyword search on each new item's title and text (same method as the competitor check):
+  exact, fast, free, and cannot hallucinate
+- Step B – Only for matched items: the AI writes one sentence on why it matters to the rep's product
+  ("New security engineer posting suggests MCU is expanding its in-house security team")
+- Design reason: code does the exact job (matching); the model does the judgment job (summarizing).
+  Same principle as the main app.
+
+### 6. Notification (how the rep is told)
+- One daily digest email instead of one email per item (avoids alert fatigue)
+- Each entry: company, item title, date, link, AI one-line summary, matched keyword(s)
+- No email sent on days with no matches
+- Sent through an email service (SMTP or a provider such as SendGrid); email credentials stored in
+  secrets, never in code, the same as the Groq API key
+
+### Example digest
+Subject: Account alerts – 2 new items (Oct 17)
+- Municipal Credit Union – "MCU selects VaultRight to strengthen branch operations" (Aug 20) – [link]
+  Matched: "operations" · Why it matters: branch technology investment may bring new endpoints to protect.
+- Municipal Credit Union – Job posting: "Information Security Analyst" – [link]
+  Matched: "security" · Why it matters: signals growing security investment; possible new stakeholder.
+(Example entries are illustrative.)
+
+### Risks and safeguards
+| Risk | Safeguard |
+|---|---|
+| Overloading or violating websites' rules | Check robots.txt and terms; one request per page per day; identify the scraper |
+| Duplicate alerts | Saved list of seen links (change detection) |
+| Too many irrelevant alerts | Keyword match first; rep can edit keywords; digest format |
+| AI summary is wrong | Summary labeled as AI-generated; the link to the original is always included |
+| Leaked credentials | Email + API keys in secrets (GitHub/Streamlit), never committed |
+| Unwanted emails | Unsubscribe / pause option per rep |
+| Site redesign breaks scraping | try/except per page (as in the app); log failures; alert the admin |
+
+### Effort estimate (if built)
+About 4–6 hours: scheduler setup, link tracking, keyword matching, email sending, testing.
+Most code already exists in the app (get_page_text, ask_model, try/except patterns).   
