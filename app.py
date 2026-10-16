@@ -88,8 +88,20 @@ Other company pages: {extra_text}"""
     facts = ask_model(extract_prompt)
     with st.expander("Step 1 – Facts extracted from the website"):
         st.write(facts)
+        
+    # STEP 2 – NEEDS: from company facts only (never sees the product sheet)
+    needs_prompt = f"""You are a business analyst. Based ONLY on the company facts below, list 3 to 5 likely needs this company may have related to {product_category}.
+For each need, give one short reason tied to a specific fact from the list.
+Do not mention any vendor, product, or product feature. If the facts don't support a need, leave it out.
 
-    # STEP 2 – WRITE the brief using only the extracted facts
+Company facts:
+{facts}"""
+
+    needs = ask_model(needs_prompt)
+    with st.expander("Step 2 – Likely needs (from company facts only)"):
+        st.write(needs)
+        
+    # STEP 3 – WRITE the brief using only the extracted facts
     brief_prompt = f"""You are a sales research analyst helping a sales rep prepare for a first meeting.
 Write a one-page account brief about the target company.
 
@@ -100,7 +112,7 @@ Use these headings, with short bullet points under each:
 1. Company Strategy: what the company does and its current priorities
 2. Leadership: key leaders and why each might matter to this sale
 3. Competitor Mentions: use only the competitor check results below
-4. Likely Needs
+4. Likely Needs: use only the needs analysis below, keeping each reason
 5. Talking Points
 
 Rules:
@@ -115,7 +127,8 @@ Rules:
 - Every statement about a leader's role or interest must include the word 'likely'.
 - A competitor not being mentioned on the website does not mean the company doesn't use it. Never describe this as an opening or opportunity.
 
-   Product overview (from uploaded PDF): {product_text or 'None provided'}
+Needs analysis (from company facts only): {needs}
+Product overview (from uploaded PDF): {product_text or 'None provided'}
 Competitor check results: {competitor_results}
 
 Verified facts about the company:

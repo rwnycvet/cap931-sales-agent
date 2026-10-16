@@ -376,3 +376,41 @@ Add a separate "needs analysis" step to the chain that sees ONLY the company fac
 ## Next Session
 1. Needs-analysis step (third link in the prompt chain), ~20 min
 2. #6: One-pager layout + download button, ~1 hr
+
+---
+
+# Oct 14, 2026 – Session Notes (Part 6)
+
+## Time Log
+| Time | Task | Duration |
+|---|---|---|
+| 18:24 – 18:45 | Presentation deck drafted (14 slides, speaker notes) for class presentation | ~20 min |
+
+## Presentation Deck
+- 14 slides: problem, test case, pipeline, tools/model, 7 prompt versions, hallucination (v1→v3), prompt chaining, debugging story, Python vs. model roles, result, limitations, lessons, Q&A
+- Built from my real project notes; no invented results
+- Placeholders to fill before presenting:
+  - [ ] Presentation date (cover)
+  - [ ] Screenshot of final one-pager (result slide)
+  - [ ] Leader-name accuracy check __/8 (result slide)
+  - [ ] Live demo link + GitHub link (last slide)
+  - [ ] Update limitations table as items get fixed
+- Note: deck is private; share it from its Share menu if the instructor needs it
+
+---
+
+# Oct 15, 2026 – Session Notes
+
+## Time Log
+| Time | Task | Duration |
+|---|---|---|
+| 21:42 – 22:19 | Planned needs-analysis step; added Step 2 (needs) to the prompt chain | ~35 min |
+| 22:19 – 22:25 | Clarified code comments; renumbered "STEP 2 – WRITE" → "STEP 3 – WRITE" | ~5 min |
+| 22:25 – 23:31 | Tested v8 with standard test case + PDF; reviewed output | ~65 min |
+| 23:31 – 23:37 | Analysis, wrap-up, notes | ~5 min |
+| **Total** | | **~1 hr 55 min** |
+
+## Prompt v8 – Needs-Analysis Step (3-step chain)
+**Problem (from v7):** "Likely Needs" restated product features (Windows/macOS/Linux, ransomware rollback, cloud-managed agents) even with an explicit rule against it, because the model could see the product sheet while writing that section.
+
+**Fix (structural, not another rule):** new middle step that never sees the product sheet.
