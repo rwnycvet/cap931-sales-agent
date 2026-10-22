@@ -167,11 +167,11 @@ def read_pdf_text(pdf_file):
 
 # ---------- AI model ----------
 
-def call_model(client, prompt):
+def call_model(client, prompt, model=MODEL_NAME):
     """Send one prompt to the model. Raise ModelError on any failure."""
     try:
         response = client.chat.completions.create(
-            model=MODEL_NAME,
+            model=model,
             messages=[{"role": "user", "content": prompt}],
         )
         answer = response.choices[0].message.content
@@ -221,7 +221,7 @@ The target company's website is {company_url}. The rep will meet with {target_cu
 Use these headings, with short bullet points under each:
 1. Company Strategy: what the company does and its current priorities
 2. Leadership: key leaders and why each might matter to this sale
-3. Competitor Mentions: use only the competitor check results below, then one line per competitor on its positioning from the competitor research
+3. Competitor Mentions: use only the competitor check results below. Add one line per competitor on its positioning ONLY if the competitor research below describes it; if the research says None, do not describe any competitor
 4. Likely Needs: use only the needs analysis below, keeping each reason
 5. Talking Points
 

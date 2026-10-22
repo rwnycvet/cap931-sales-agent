@@ -21,7 +21,9 @@ Inputs (form + optional product PDF)
         │
         ▼
 Python: fetch pages (requests + BeautifulSoup), strip nav/header/footer
+Python: URL safety check (blocks private/internal addresses), auto-find About/Leadership/News/Careers pages
 Python: competitor check (is each competitor named on the prospect's pages?)
+LLM:    competitor research (summarize each competitor's own homepage)
 Python: read product PDF (pypdf)
         │
         ▼
@@ -49,6 +51,8 @@ Python: add sources list, header, date → downloadable one-pager (.md)
 | Value Proposition | Yes | One sentence on what the product does for the customer |
 | Target Customer | Yes | Kelly Gerber, Chief Risk Officer |
 | Product overview PDF | No | Product sheet |
+| Auto-find pages | Checkbox (on) | Finds up to 5 About, Leadership, News, Careers, Investor pages |
+| Research competitor websites | Checkbox (on) | Summarizes each competitor's homepage |
 
 ## Run it locally
 
@@ -76,6 +80,14 @@ It opens at http://localhost:8501.
 
 > If you see a 403 error from Groq, turn off your VPN and try again.
 
+## Run the tests
+
+```bash
+uv run pytest
+```
+
+The 42 tests cover required fields, URL validation (blocking private and internal addresses), page extraction, failed requests, competitor checks, PDF parsing, prompt construction, source preservation, AI model failures, page discovery and competitor research. They use fakes instead of the internet or the Groq API, so they run in under a second with no API key.
+
 ## Deployment
 
 The app is deployed on **Streamlit Community Cloud** from this repository's `main` branch. It redeploys automatically on every push.
@@ -87,7 +99,10 @@ The app is deployed on **Streamlit Community Cloud** from this repository's `mai
 ## Project structure
 
 ```
-app.py              Streamlit app: form, page fetching, prompt chain, one-pager
+app.py              Streamlit page: form, buttons, messages (imports agent_core)
+agent_core.py       All logic: URL safety, page fetching and discovery, competitor check and research, PDF, prompts, model call, one-pager
+tests/              42 automated pytest tests for agent_core.py
+experiments/        Controlled experiment: chain vs single prompt, gpt-oss-120b vs 20b (script, evidence, results)
 requirements.txt    Dependencies for Streamlit Cloud
 pyproject.toml      Project metadata (uv)
 notes.md            Development log with timestamps
@@ -104,9 +119,17 @@ Test case: selling **GreatShield EDR** to **Municipal Credit Union (MCU)**, with
 - Every company fact traces to a listed source page
 - Competitor section comes from the Python check, not the model
 
+## Controlled experiment
+
+`uv run python experiments/run_experiment.py` runs the same saved evidence through three setups, twice each: the 3-step chain and a single prompt on gpt-oss-120b, and the chain on gpt-oss-20b. Results are in [experiments/results/summary.md](experiments/results/summary.md).
+
+- **Chain vs. single prompt:** in both single-prompt runs, all six "likely needs" were product features; the chain runs had none.
+- **Found a bug:** with no competitor research available, gpt-oss-120b invented competitor positioning. The prompt now describes competitors only when research exists.
+- **120b vs. 20b:** 20b was slightly faster and more cautious; 120b wrote briefs more tailored to the prospect. Two runs each, so this is a trade-off, not a proven ranking.
+
 ## Limitations
 
-- Only reads the pages the user enters; it does not search news or job boards
+- Reads the homepage, pages the user enters and up to 5 auto-found pages; it does not search outside news or job boards, and auto-discovery can miss the best page
 - "Not mentioned on the website" does not mean "not a customer"; the rep still needs to ask
 - Pages built with JavaScript may load empty
 - Output wording varies between runs; a human should review the brief before use
@@ -115,7 +138,7 @@ Test case: selling **GreatShield EDR** to **Municipal Credit Union (MCU)**, with
 ## Security notes
 
 - API keys live in `.env` locally and in Streamlit Secrets in production
-- User-entered URLs are fetched by the server, so a production version needs URL validation to block internal addresses (SSRF)
+- User-entered URLs are fetched by the server, so `is_safe_url()` only allows http/https and blocks private, loopback, link-local and reserved IP addresses (SSRF protection); pages over 2 MB are refused
 - Web page text is passed to the model, so pages could contain prompt-injection attempts; the brief should always be reviewed
 
 ## AI assistance
