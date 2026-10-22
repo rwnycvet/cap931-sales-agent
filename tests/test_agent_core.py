@@ -15,6 +15,7 @@ import agent_core
 from agent_core import (
     ModelError,
     build_brief_prompt,
+    build_competitor_prompt,
     build_extract_prompt,
     build_needs_prompt,
     build_one_pager,
@@ -23,6 +24,7 @@ from agent_core import (
     check_competitors,
     clean_lines,
     competitor_name,
+    discover_pages,
     get_page_text,
     is_safe_url,
     read_pdf_text,
@@ -301,3 +303,73 @@ def test_empty_model_answer_is_an_error():
     client = FakeClient(answer="")
     with pytest.raises(ModelError, match="empty answer"):
         call_model(client, "my prompt")
+
+
+# ---------- 10. Page auto-discovery ----------
+
+HOMEPAGE = """<html><nav>
+<a href="/about-mcu/">About</a>
+<a href="/about-mcu/leadership-team">Leadership</a>
+<a href="https://www.nymcu.org/news/press-releases#top">Press</a>
+<a href="/careers">Careers</a>
+<a href="/loans/auto">Auto loans</a>
+<a href="https://www.facebook.com/about">Facebook</a>
+<a href="mailto:news@nymcu.org">Email</a>
+<a href="/about-mcu">About again</a>
+</nav></html>"""
+
+
+def test_discovery_finds_company_pages():
+    found = discover_pages("https://www.nymcu.org", HOMEPAGE)
+    assert found == [
+        "https://www.nymcu.org/about-mcu/",
+        "https://www.nymcu.org/about-mcu/leadership-team",
+        "https://www.nymcu.org/news/press-releases",
+        "https://www.nymcu.org/careers",
+    ]
+
+
+def test_discovery_skips_other_sites_unrelated_pages_and_duplicates():
+    found = discover_pages("https://www.nymcu.org", HOMEPAGE)
+    assert not any("facebook" in url for url in found)       # other website
+    assert not any("loans" in url for url in found)          # not a company-info page
+    assert not any(url.startswith("mailto") for url in found)
+    assert len(found) == len(set(found))                     # /about-mcu and /about-mcu/ counted once
+
+
+def test_discovery_skips_pages_the_user_already_entered():
+    found = discover_pages("https://www.nymcu.org", HOMEPAGE,
+                           already_have=["https://www.nymcu.org/about-mcu"])
+    assert "https://www.nymcu.org/about-mcu/" not in found
+
+
+def test_discovery_respects_max_pages():
+    assert len(discover_pages("https://www.nymcu.org", HOMEPAGE, max_pages=2)) == 2
+
+
+# ---------- 11. Competitor research ----------
+
+def test_competitor_prompt_uses_only_competitor_text():
+    prompt = build_competitor_prompt("crowdstrike", "FALCON PLATFORM TEXT")
+    assert "crowdstrike" in prompt
+    assert "FALCON PLATFORM TEXT" in prompt
+    assert "Using ONLY this text" in prompt
+    assert "Not stated" in prompt
+
+
+def test_brief_prompt_includes_competitor_research():
+    prompt = build_brief_prompt("P", "C", "V", "U", "T", "N", "", [], "F",
+                                competitor_research="crowdstrike: AI-native platform")
+    assert "crowdstrike: AI-native platform" in prompt
+    assert "Do not repeat competitor claims as facts." in prompt
+
+
+def test_brief_prompt_without_competitor_research_says_none():
+    prompt = build_brief_prompt("P", "C", "V", "U", "T", "N", "", [], "F")
+    assert "Competitor research (from each competitor's own website): None" in prompt
+
+
+def test_html_to_text_and_fetch_together(public_dns, monkeypatch):
+    monkeypatch.setattr(agent_core.requests, "get", fake_get("<nav>Menu</nav><p>Hello</p>"))
+    html = agent_core.fetch_html("https://www.nymcu.org")
+    assert agent_core.html_to_text(html) == "Hello"

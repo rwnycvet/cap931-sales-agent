@@ -7,7 +7,7 @@ app.py imports these functions and only handles the web page.
 import ipaddress
 import socket
 from datetime import date
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -16,6 +16,10 @@ from pypdf import PdfReader
 MODEL_NAME = "openai/gpt-oss-120b"
 MAX_PAGE_BYTES = 2_000_000  # 2 MB
 MAX_PDF_CHARS = 4000
+MAX_EXTRA_CHARS = 12000      # total text from extra pages sent to the model
+MAX_DISCOVERED_PAGES = 5
+DISCOVERY_KEYWORDS = ("about", "leadership", "team", "executive", "news", "press",
+                      "careers", "jobs", "investor")
 
 
 class ModelError(Exception):
@@ -59,8 +63,8 @@ def clean_lines(text):
 
 # ---------- Website data ----------
 
-def get_page_text(url):
-    """Download a public web page and return its readable text."""
+def fetch_html(url):
+    """Download a public web page (max 2 MB) and return its raw HTML."""
     if not is_safe_url(url):
         raise ValueError(f"Blocked unsafe URL: {url}")
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -68,10 +72,55 @@ def get_page_text(url):
     content = page.raw.read(MAX_PAGE_BYTES + 1, decode_content=True)
     if len(content) > MAX_PAGE_BYTES:
         raise ValueError(f"Page too large: {url}")
-    soup = BeautifulSoup(content, "html.parser")
+    return content
+
+
+def html_to_text(html):
+    """Return the readable text of a page, without menus, headers, footers and scripts."""
+    soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["nav", "header", "footer", "script", "style"]):
         tag.decompose()
     return soup.get_text(separator=" ", strip=True)
+
+
+def get_page_text(url):
+    """Download a public web page and return its readable text."""
+    return html_to_text(fetch_html(url))
+
+
+def normalize_url(url):
+    """Make URLs comparable: drop #fragments and trailing slashes, lowercase the host."""
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/")
+    return f"{parsed.scheme}://{(parsed.hostname or '').lower()}{path}"
+
+
+def discover_pages(base_url, html, already_have=(), max_pages=MAX_DISCOVERED_PAGES):
+    """Find links on the homepage to About, Leadership, News, Careers and Investor pages.
+
+    Only links on the same website are kept, and pages the user already entered are skipped.
+    """
+    base_host = (urlparse(base_url).hostname or "").lower().removeprefix("www.")
+    seen = {normalize_url(base_url)} | {normalize_url(u) for u in already_have}
+    found = []
+    soup = BeautifulSoup(html, "html.parser")
+    for link in soup.find_all("a", href=True):
+        full_url = urljoin(base_url, link["href"]).split("#")[0]
+        parsed = urlparse(full_url)
+        if parsed.scheme not in ("http", "https"):
+            continue
+        if (parsed.hostname or "").lower().removeprefix("www.") != base_host:
+            continue
+        if not any(word in parsed.path.lower() for word in DISCOVERY_KEYWORDS):
+            continue
+        key = normalize_url(full_url)
+        if key in seen:
+            continue
+        seen.add(key)
+        found.append(full_url)
+        if len(found) >= max_pages:
+            break
+    return found
 
 
 def competitor_name(url):
@@ -91,6 +140,18 @@ def check_competitors(competitor_urls, website_text):
         else:
             results.append(f"{name}: not mentioned on the prospect's website")
     return results
+
+
+def build_competitor_prompt(name, page_text):
+    """Ask the model to summarize a competitor's positioning from its own website."""
+    return f"""Below is text from the website of {name}, a competitor.
+Using ONLY this text, write 3 short bullet points:
+- What they sell (main product or platform)
+- Who they say it is for
+- Their main claim or differentiator, in their own words
+Do not add anything that is not in the text. If something is not stated, write 'Not stated'.
+
+Website text: {page_text}"""
 
 
 # ---------- Product PDF ----------
@@ -148,7 +209,8 @@ Company facts:
 
 
 def build_brief_prompt(product_name, product_category, value_proposition, company_url,
-                       target_customer, needs, product_text, competitor_results, facts):
+                       target_customer, needs, product_text, competitor_results, facts,
+                       competitor_research=""):
     """STEP 3 – WRITE the brief using only the extracted facts."""
     return f"""You are a sales research analyst helping a sales rep prepare for a first meeting.
 Write a one-page account brief about the target company.
@@ -159,7 +221,7 @@ The target company's website is {company_url}. The rep will meet with {target_cu
 Use these headings, with short bullet points under each:
 1. Company Strategy: what the company does and its current priorities
 2. Leadership: key leaders and why each might matter to this sale
-3. Competitor Mentions: use only the competitor check results below
+3. Competitor Mentions: use only the competitor check results below, then one line per competitor on its positioning from the competitor research
 4. Likely Needs: use only the needs analysis below, keeping each reason
 5. Talking Points
 
@@ -170,6 +232,7 @@ Rules:
 - Do not state what a leader decides, owns, or prefers unless the facts say so. You may suggest why they might care, labeled as 'likely'.
 - Do not invent names, titles, statistics, or case studies.
 - Do not claim the company uses a competitor unless the results say it is mentioned.
+- Use the competitor research only to describe what each competitor says about itself and to suggest how the rep can differentiate. Do not repeat competitor claims as facts.
 - Do not say where facts came from; sources are listed separately.
 - Company Strategy and Likely Needs must come only from the verified company facts, never from the product overview.
 - Every statement about a leader's role or interest must include the word 'likely'.
@@ -179,6 +242,7 @@ Rules:
 Needs analysis (from company facts only): {needs}
 Product overview (from uploaded PDF): {product_text or 'None provided'}
 Competitor check results: {competitor_results}
+Competitor research (from each competitor's own website): {competitor_research or 'None'}
 
 Verified facts about the company:
 {facts}"""
