@@ -6,17 +6,43 @@ import requests
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
 from datetime import date
+import ipaddress
+import socket
+from urllib.parse import urlparse
 
 load_dotenv()
 client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
+MAX_PAGE_BYTES = 2_000_000  # 2 MB
+
+def is_safe_url(url):
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return False
+    if not parsed.hostname:
+        return False
+    try:
+        ip_text = socket.gethostbyname(parsed.hostname)
+    except socket.gaierror:
+        return False
+    ip = ipaddress.ip_address(ip_text)
+    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+        return False
+    return True
+
 def get_page_text(url):
+    if not is_safe_url(url):
+        raise ValueError(f"Blocked unsafe URL: {url}")
     headers = {"User-Agent": "Mozilla/5.0"}
-    page = requests.get(url, headers=headers, timeout=15)
-    soup = BeautifulSoup(page.text, "html.parser")
-    for tag in soup(["nav", "header", "footer", "script", "style"]):   # NEW
-        tag.decompose()                                                 # NEW
+    page = requests.get(url, headers=headers, timeout=15, stream=True)
+    content = page.raw.read(MAX_PAGE_BYTES + 1, decode_content=True)
+    if len(content) > MAX_PAGE_BYTES:
+        raise ValueError(f"Page too large: {url}")
+    soup = BeautifulSoup(content, "html.parser")
+    for tag in soup(["nav", "header", "footer", "script", "style"]):
+        tag.decompose()
     return soup.get_text(separator=" ", strip=True)
+
 def ask_model(prompt):
        try:
            response = client.chat.completions.create(
@@ -42,6 +68,9 @@ if st.button("Generate"):
     if not company_url.startswith("http"):
         st.error("Company URL must start with https://")
         st.stop()
+    if not is_safe_url(company_url):
+        st.error("That Company URL can't be used. It must be a public website.")
+        st.stop()    
     if not product_name or not value_proposition or not target_customer:
         st.error("Please fill in Product Name, Value Proposition, and Target Customer.")
         st.stop()
