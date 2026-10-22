@@ -1,58 +1,36 @@
 import os
+
+import streamlit as st
 from dotenv import load_dotenv
 from groq import Groq
-import streamlit as st
-import requests
-from bs4 import BeautifulSoup
-from pypdf import PdfReader
-from datetime import date
-import ipaddress
-import socket
-from urllib.parse import urlparse
+
+from agent_core import (
+    ModelError,
+    build_brief_prompt,
+    build_extract_prompt,
+    build_needs_prompt,
+    build_one_pager,
+    build_sources_text,
+    call_model,
+    check_competitors,
+    clean_lines,
+    get_page_text,
+    read_pdf_text,
+    validate_inputs,
+)
 
 load_dotenv()
 client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
-MAX_PAGE_BYTES = 2_000_000  # 2 MB
-
-def is_safe_url(url):
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        return False
-    if not parsed.hostname:
-        return False
-    try:
-        ip_text = socket.gethostbyname(parsed.hostname)
-    except socket.gaierror:
-        return False
-    ip = ipaddress.ip_address(ip_text)
-    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-        return False
-    return True
-
-def get_page_text(url):
-    if not is_safe_url(url):
-        raise ValueError(f"Blocked unsafe URL: {url}")
-    headers = {"User-Agent": "Mozilla/5.0"}
-    page = requests.get(url, headers=headers, timeout=15, stream=True)
-    content = page.raw.read(MAX_PAGE_BYTES + 1, decode_content=True)
-    if len(content) > MAX_PAGE_BYTES:
-        raise ValueError(f"Page too large: {url}")
-    soup = BeautifulSoup(content, "html.parser")
-    for tag in soup(["nav", "header", "footer", "script", "style"]):
-        tag.decompose()
-    return soup.get_text(separator=" ", strip=True)
 
 def ask_model(prompt):
-       try:
-           response = client.chat.completions.create(
-               model="openai/gpt-oss-120b",
-               messages=[{"role": "user", "content": prompt}],
-           )
-           return response.choices[0].message.content
-       except Exception as error:
-           st.error(f"Could not reach the AI model. Check your internet or VPN and try again. Details: {error}")
-           st.stop()
+    """Call the model; on failure show a friendly error and stop the page."""
+    try:
+        return call_model(client, prompt)
+    except ModelError as error:
+        st.error(str(error))
+        st.stop()
+
 
 st.title("Sales Account Research Assistant")
 
@@ -64,22 +42,23 @@ competitors_urls = st.text_area("Competitors URLs (one per line)")
 value_proposition = st.text_area("Value Proposition")
 target_customer = st.text_input("Target Customer")
 product_overview = st.file_uploader("Product overview PDF (optional)", type=["pdf"])
+
 if st.button("Generate"):
-    if not company_url.startswith("http"):
-        st.error("Company URL must start with https://")
+    error_message = validate_inputs(product_name, company_url, value_proposition, target_customer)
+    if error_message:
+        st.error(error_message)
         st.stop()
-    if not is_safe_url(company_url):
-        st.error("That Company URL can't be used. It must be a public website.")
-        st.stop()    
-    if not product_name or not value_proposition or not target_customer:
-        st.error("Please fill in Product Name, Value Proposition, and Target Customer.")
+
+    try:
+        full_text = get_page_text(company_url)
+    except Exception:
+        st.error(f"Could not load {company_url}. Check the address and try again.")
         st.stop()
-    full_text = get_page_text(company_url)
     website_text = full_text[:4000]
 
-    sources = [company_url]                       # NEW: list of every page we used
-    extra_text = ""                               # NEW: text from the extra pages
-    for page_url in extra_pages.splitlines():     # NEW: loop over extra pages
+    sources = [company_url]
+    extra_text = ""
+    for page_url in clean_lines(extra_pages):
         try:
             page_text = get_page_text(page_url)
             extra_text += page_text[:3000] + "\n\n"
@@ -88,118 +67,40 @@ if st.button("Generate"):
         except Exception:
             st.warning(f"Could not load {page_url} – skipped.")
 
-    competitor_results = []
-    for url in competitors_urls.splitlines():
-        name = url.replace("https://", "").replace("www.", "").split(".")[0]
-        if name.lower() in full_text.lower():
-            result = f"{name}: mentioned on the prospect's website"
-        else:
-            result = f"{name}: not mentioned on the prospect's website"
-        competitor_results.append(result)
+    competitor_results = check_competitors(clean_lines(competitors_urls), full_text)
+    for result in competitor_results:
         st.write(result)
 
     product_text = ""
     if product_overview is not None:
         try:
-            reader = PdfReader(product_overview)
-            for pdf_page in reader.pages:
-                product_text += (pdf_page.extract_text() or "") + "\n"
-            product_text = product_text[:4000]
-            st.success(f"Read {len(reader.pages)} page(s) from the product PDF.")
+            product_text, page_count = read_pdf_text(product_overview)
+            st.success(f"Read {page_count} page(s) from the product PDF.")
         except Exception:
-            st.warning("Could not read the PDF – continuing without it.")    
+            st.warning("Could not read the PDF – continuing without it.")
 
-        # STEP 1 – EXTRACT facts from the website
-    extract_prompt = f"""Read the company web page text below and list ONLY facts that are directly stated in it.
-Group them under these headings: Company Description, Size & Members, Products & Services, Recent Initiatives, Leaders (name and exact title).
-Use short bullet points. Do not interpret, guess, or add anything that is not in the text.
-If a heading has nothing, write 'None found'.
-
-Homepage text: {website_text}
-
-Other company pages: {extra_text}"""
-
-    facts = ask_model(extract_prompt)
+    # STEP 1 – EXTRACT facts from the website
+    facts = ask_model(build_extract_prompt(website_text, extra_text))
     with st.expander("Step 1 – Facts extracted from the website"):
         st.write(facts)
-        
-    # STEP 2 – NEEDS: from company facts only (never sees the product sheet)
-    needs_prompt = f"""You are a business analyst. Based ONLY on the company facts below, list 3 to 5 likely needs this company may have related to {product_category}.
-For each need, give one short reason tied to a specific fact from the list.
-Do not mention any vendor, product, or product feature. If the facts don't support a need, leave it out.
 
-Company facts:
-{facts}"""
-
-    needs = ask_model(needs_prompt)
+    # STEP 2 – NEEDS from company facts only
+    needs = ask_model(build_needs_prompt(product_category, facts))
     with st.expander("Step 2 – Likely needs (from company facts only)"):
         st.write(needs)
-        
-    # STEP 3 – WRITE the brief using only the extracted facts
-    brief_prompt = f"""You are a sales research analyst helping a sales rep prepare for a first meeting.
-Write a one-page account brief about the target company.
 
-The rep sells {product_name}, a {product_category} product. Its value: {value_proposition}.
-The target company's website is {company_url}. The rep will meet with {target_customer}.
-
-Use these headings, with short bullet points under each:
-1. Company Strategy: what the company does and its current priorities
-2. Leadership: key leaders and why each might matter to this sale
-3. Competitor Mentions: use only the competitor check results below
-4. Likely Needs: use only the needs analysis below, keeping each reason
-5. Talking Points
-
-Rules:
-- Keep it under 350 words. Write for a rep with 10 minutes to prepare.
-- Use only the verified facts below. If something is missing, write 'Unknown – verify'.
-- Describe {product_name} using ONLY the value proposition and the product overview below. Do not add features, pricing, or deployment claims that are not in them.
-- Do not state what a leader decides, owns, or prefers unless the facts say so. You may suggest why they might care, labeled as 'likely'.
-- Do not invent names, titles, statistics, or case studies.
-- Do not claim the company uses a competitor unless the results say it is mentioned.
-- Do not say where facts came from; sources are listed separately.
-- Company Strategy and Likely Needs must come only from the verified company facts, never from the product overview.
-- Every statement about a leader's role or interest must include the word 'likely'.
-- A competitor not being mentioned on the website does not mean the company doesn't use it. Never describe this as an opening or opportunity.
-- Start directly with heading 1. Do not write a title, a meeting line, or a closing note.
-
-Needs analysis (from company facts only): {needs}
-Product overview (from uploaded PDF): {product_text or 'None provided'}
-Competitor check results: {competitor_results}
-
-Verified facts about the company:
-{facts}"""
-
-    brief = ask_model(brief_prompt)
+    # STEP 3 – WRITE the brief
+    brief = ask_model(build_brief_prompt(
+        product_name, product_category, value_proposition, company_url,
+        target_customer, needs, product_text, competitor_results, facts,
+    ))
     st.write(brief)
 
-    # Build the sources list as text (used on screen AND in the download)
-    sources_text = ""
-    for source in sources:
-        sources_text += f"- {source}\n"
-
+    sources_text = build_sources_text(sources)
     st.markdown("**Sources**")
     st.markdown(sources_text)
 
-    # Build the one-pager document
-    today = date.today().strftime("%B %d, %Y")
-    one_pager = f"""# Account Brief
-
-- **Product:** {product_name}
-- **Meeting with:** {target_customer}
-- **Company:** {company_url}
-- **Date:** {today}
-- **Prepared by:** Sales Account Research Assistant
-
----
-
-{brief}
-
----
-
-## Sources
-{sources_text}
-"""
-
+    one_pager = build_one_pager(product_name, target_customer, company_url, brief, sources_text)
     st.download_button(
         label="Download one-pager",
         data=one_pager,
