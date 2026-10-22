@@ -1,7 +1,7 @@
 [project]
 name = "cap931-sales-agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI sales assistant that turns a prospect's public web pages into a sourced one-page account brief"
 readme = "README.md"
 authors = [
     { name = "Richard Watson Jr", email = "200259687+rwnycvet@users.noreply.github.com" }
